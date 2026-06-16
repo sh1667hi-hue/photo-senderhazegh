@@ -19,9 +19,6 @@ android {
         release {
             minifyEnabled false
         }
-        debug {
-            minifyEnabled false
-        }
     }
 
     compileOptions {
@@ -35,9 +32,6 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.core:core:1.12.0'
 
-    // Firebase core
     implementation platform('com.google.firebase:firebase-bom:33.1.2')
-
-    // Firebase Functions (برای ارسال ایمیل از سرور)
     implementation 'com.google.firebase:firebase-functions'
 }
