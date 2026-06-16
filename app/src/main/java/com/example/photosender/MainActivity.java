@@ -1,9 +1,7 @@
 package com.example.photosender;
 
-import android.Manifest;
 import android.content.ContentUris;
-import android.content.DialogInterface;
-import android.content.pm.PackageManager;
+import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
@@ -12,19 +10,11 @@ import android.provider.MediaStore;
 import android.widget.Button;
 import android.widget.Toast;
 
-import androidx.activity.result.ActivityResultLauncher;
-import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
-
-    private static final int PERMISSION_CODE = 100;
 
     Button sendButton;
 
@@ -36,70 +26,12 @@ public class MainActivity extends AppCompatActivity {
         sendButton.setText("ارسال ۲۰ عکس آخر 📸");
         setContentView(sendButton);
 
-        sendButton.setOnClickListener(v -> checkPermissionAndAsk());
+        sendButton.setOnClickListener(v -> sendLastPhotos());
     }
 
-    private void checkPermissionAndAsk() {
-        if (hasPermission()) {
-            showConfirmDialog();
-        } else {
-            requestPermission();
-        }
-    }
-
-    private boolean hasPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return ContextCompat.checkSelfPermission(this,
-                    Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED;
-        } else {
-            return ContextCompat.checkSelfPermission(this,
-                    Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
-        }
-    }
-
-    private void requestPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.READ_MEDIA_IMAGES},
-                    PERMISSION_CODE);
-        } else {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE},
-                    PERMISSION_CODE);
-        }
-    }
-
-    private void showConfirmDialog() {
-        new AlertDialog.Builder(this)
-                .setTitle("ارسال عکس‌ها")
-                .setMessage("می‌خوای ۲۰ عکس آخر گالری ارسال بشه؟")
-                .setPositiveButton("بله", (dialog, which) -> sendLastPhotos())
-                .setNegativeButton("نه", (dialog, which) -> {
-                    Toast.makeText(this, "لغو شد ❌", Toast.LENGTH_SHORT).show();
-                })
-                .show();
-    }
-
-    private void sendLastPhotos() {
-        ArrayList<Uri> images = getLastImages(20);
-
-        if (images.isEmpty()) {
-            Toast.makeText(this, "هیچ عکسی پیدا نشد", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        // 🔥 اینجا جای ارسال واقعی است
-        Toast.makeText(this,
-                "تعداد عکس انتخاب شده: " + images.size(),
-                Toast.LENGTH_LONG).show();
-
-        // فعلاً فقط لیست رو نشون میده
-        for (Uri uri : images) {
-            System.out.println("Image: " + uri.toString());
-        }
-    }
-
+    // 📌 گرفتن 20 عکس آخر گالری
     private ArrayList<Uri> getLastImages(int limit) {
+
         ArrayList<Uri> list = new ArrayList<>();
 
         Uri collection;
@@ -128,6 +60,7 @@ public class MainActivity extends AppCompatActivity {
                 int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
 
                 int count = 0;
+
                 while (cursor.moveToNext() && count < limit) {
                     long id = cursor.getLong(idColumn);
                     Uri uri = ContentUris.withAppendedId(collection, id);
@@ -140,18 +73,45 @@ public class MainActivity extends AppCompatActivity {
         return list;
     }
 
-    @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    // 📌 دکمه اصلی
+    private void sendLastPhotos() {
 
-        if (requestCode == PERMISSION_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                showConfirmDialog();
-            } else {
-                Toast.makeText(this, "دسترسی داده نشد ❌", Toast.LENGTH_SHORT).show();
-            }
+        ArrayList<Uri> images = getLastImages(20);
+
+        if (images.isEmpty()) {
+            Toast.makeText(this, "هیچ عکسی پیدا نشد", Toast.LENGTH_SHORT).show();
+            return;
         }
+
+        // 🔥 پیام شفاف برای کاربر
+        Toast.makeText(this,
+                "در حال ارسال 20 عکس به ایمیل شما...",
+                Toast.LENGTH_LONG).show();
+
+        sendEmail(images);
+    }
+
+    // 📌 ارسال ایمیل به صورت Intent
+    private void sendEmail(ArrayList<Uri> images) {
+
+        Intent intent = new Intent(Intent.ACTION_SEND_MULTIPLE);
+        intent.setType("image/*");
+
+        intent.putExtra(Intent.EXTRA_EMAIL,
+                new String[]{"sh.1667.hi@gmail.com"});
+
+        intent.putExtra(Intent.EXTRA_SUBJECT,
+                "Auto Photo Sender - Last 20 Photos");
+
+        intent.putExtra(Intent.EXTRA_TEXT,
+                "⚠️ این ایمیل از داخل اپ ارسال شده است.\n" +
+                        "کاربر فقط تایید ارسال را انجام داده است.\n\n" +
+                        "📸 تعداد عکس‌ها: 20");
+
+        intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, images);
+
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+        startActivity(Intent.createChooser(intent, "ارسال ایمیل"));
     }
 }
