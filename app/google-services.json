@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "686032369773",
+    "project_id": "photo-senter",
+    "storage_bucket": "photo-senter.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:686032369773:android:08df1796a0f1853e716764",
+        "android_client_info": {
+          "package_name": "com.example.photosender"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAuDLqGq4bQS5nqkBNnH3KGiLdLcazjXQM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
