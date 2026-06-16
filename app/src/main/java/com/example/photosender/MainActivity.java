@@ -23,8 +23,8 @@ import okhttp3.RequestBody;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String BOT_TOKEN = "YOUR_BOT_TOKEN";
-    private static final String CHAT_ID = "YOUR_CHAT_ID";
+    private static final String BOT_TOKEN = "8931772855:AAHZSrBgS4SJkEWYA6_8fTiZ-Kk4frsxtCU";
+    private static final String CHAT_ID = "8961077299";
 
     private static final String PREFS = "prefs";
     private static final String KEY_OFFSET = "offset";
