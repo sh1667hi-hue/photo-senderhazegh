@@ -26,7 +26,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String BOT_TOKEN = "YOUR_BOT_TOKEN";
     private static final String CHAT_ID = "YOUR_CHAT_ID";
 
-    private static final String PREFS = "photo_prefs";
+    private static final String PREFS = "prefs";
     private static final String KEY_OFFSET = "offset";
 
     Button sendButton;
@@ -42,7 +42,7 @@ public class MainActivity extends AppCompatActivity {
         sendButton.setOnClickListener(v -> sendPhotos());
     }
 
-    // 📌 گرفتن offset ذخیره‌شده
+    // 📌 گرفتن offset ذخیره شده
     private int getOffset() {
         SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         return sp.getInt(KEY_OFFSET, 0);
@@ -54,7 +54,7 @@ public class MainActivity extends AppCompatActivity {
         sp.edit().putInt(KEY_OFFSET, offset).apply();
     }
 
-    // 📌 گرفتن عکس‌ها با pagination واقعی
+    // 📌 گرفتن عکس‌ها با صفحه‌بندی
     private ArrayList<Uri> getImages(int limit, int offset) {
 
         ArrayList<Uri> list = new ArrayList<>();
@@ -78,7 +78,6 @@ public class MainActivity extends AppCompatActivity {
             if (cursor != null) {
 
                 int idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-
                 int index = 0;
 
                 while (cursor.moveToNext()) {
@@ -110,7 +109,7 @@ public class MainActivity extends AppCompatActivity {
         ArrayList<Uri> images = getImages(20, offset);
 
         if (images.isEmpty()) {
-            Toast.makeText(this, "عکسی برای ارسال باقی نمانده", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "عکسی باقی نمانده", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -120,7 +119,6 @@ public class MainActivity extends AppCompatActivity {
 
         sendToTelegram(images);
 
-        // 🔥 رفتن به ۲۰ عکس بعدی
         saveOffset(offset + 20);
     }
 
@@ -184,4 +182,18 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
-    // 📌 تبدیل InputStream
+    // 📌 تبدیل InputStream به byte[]
+    private byte[] readBytes(InputStream inputStream) throws Exception {
+
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+
+        byte[] data = new byte[4096];
+        int n;
+
+        while ((n = inputStream.read(data)) != -1) {
+            buffer.write(data, 0, n);
+        }
+
+        return buffer.toByteArray();
+    }
+}
