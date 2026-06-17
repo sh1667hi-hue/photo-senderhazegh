@@ -10,7 +10,7 @@
         android:id="@+id/btnConnect"
         android:layout_width="160dp"
         android:layout_height="160dp"
-        android:background="@drawable/bg_circle_button"
+        android:background="@drawable/bg_circle_but"
         android:text="اتصال"
         android:textColor="#FFFFFF"
         android:textSize="20sp"
