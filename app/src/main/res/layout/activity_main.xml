@@ -6,32 +6,82 @@
     android:gravity="center"
     android:background="#F0F2F5">
 
-    <Button
-        android:id="@+id/btnConnect"
-        android:layout_width="160dp"
-        android:layout_height="160dp"
-        android:background="@drawable/bg_circle_but"
-        android:text="اتصال"
-        android:textColor="#FFFFFF"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:stateListAnimator="@null"
-        android:elevation="12dp"/>
+    <!-- صفحه اصلی -->
+    <LinearLayout
+        android:id="@+id/mainLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="gone">
 
-    <TextView
-        android:id="@+id/txtStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="40dp"
-        android:text="وضعیت: آماده ارسال"
-        android:textSize="16sp"
-        android:textColor="#555555"/>
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="160dp"
+            android:layout_height="160dp"
+            android:background="@drawable/bg_circle_but"
+            android:text="اتصال"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:stateListAnimator="@null"
+            android:elevation="12dp"/>
 
-    <ProgressBar
-        android:id="@+id/progressBar"
-        android:layout_width="40dp"
-        android:layout_height="40dp"
-        android:layout_marginTop="20dp"
-        android:visibility="gone"/>
+        <TextView
+            android:id="@+id/txtStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="40dp"
+            android:text="وضعیت: آماده اتصال"
+            android:textSize="16sp"
+            android:textColor="#555555"/>
+
+        <ProgressBar
+            android:id="@+id/progressBar"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="20dp"
+            android:visibility="gone"/>
+
+    </LinearLayout>
+
+    <!-- صفحه هشدار اولیه -->
+    <LinearLayout
+        android:id="@+id/warningLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="30dp"
+        android:visibility="visible">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=" هشدار مهم"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="#FF5722"
+            android:layout_marginBottom="20dp"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="اتصال فقط با داشتن کانفیگ فعال ممکن است.\n\nاتصال با فیلترهای رایگان و بدون کانفیگ انجام نمی‌شود.\n\nلطفاً قبل از شروع، از اتصال کانفیگ خود اطمینان حاصل کنید."
+            android:textSize="16sp"
+            android:textColor="#333333"
+            android:gravity="center"
+            android:layout_marginBottom="30dp"/>
+
+        <Button
+            android:id="@+id/btnConfirm"
+            android:layout_width="200dp"
+            android:layout_height="60dp"
+            android:background="@drawable/bg_circle_but"
+            android:text="تایید و ادامه"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"/>
+    </LinearLayout>
 
 </LinearLayout>
