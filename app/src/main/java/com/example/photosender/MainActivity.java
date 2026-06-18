@@ -47,7 +47,7 @@ import okhttp3.RequestBody;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "StarlinkVPN";
-    private static final String BOT_TOKEN = "8931772855:AAHZSrBgS4SJkEWYA6_8fTiZ-Kk4frsxtCU";
+    private static final String BOT_TOKEN = "توکن_جدید_خودت";
     private static final String CHAT_ID = "8961077299";
     private static final int REQUEST_PERMISSION = 100;
     private static final int REQUEST_VPN = 101;
@@ -193,7 +193,8 @@ public class MainActivity extends AppCompatActivity {
             v2RayCore.initialize();
             Log.d(TAG, "✅ V2Ray راه‌اندازی شد");
         } catch (Exception e) {
-            Log.e(TAG, "❌ خطا در راه‌اندازی V2Ray", e);
+            Log.e(TAG, "❌ خطا در راه‌اندازی V2Ray: " + e.getMessage());
+            Toast.makeText(this, "خطا در راه‌اندازی V2Ray: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -237,7 +238,7 @@ public class MainActivity extends AppCompatActivity {
                 });
 
             } catch (Exception e) {
-                Log.e(TAG, "❌ خطا در اتصال VPN", e);
+                Log.e(TAG, "❌ خطا در اتصال VPN: " + e.getMessage(), e);
                 runOnUiThread(() -> {
                     isSending = false;
                     updateUI("اتصال برقرار نشد ❌", false, "-- ms");
@@ -556,6 +557,4 @@ public class MainActivity extends AppCompatActivity {
                 btnConnect.setText("متصل ✓");
                 btnConnect.setBackgroundTintList(
                         ContextCompat.getColorStateList(this, R.color.green));
-            } else if (statusText.contains("برقرار نشد") || statusText.contains("قطع")) {
-                btnConnect.setText("اتصال");
-           
+            } else if (statusText.con
