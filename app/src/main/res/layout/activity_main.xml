@@ -38,9 +38,19 @@
             android:fontFamily="sans-serif-medium"/>
 
         <TextView
+            android:id="@+id/txtPing"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
+            android:text="پینگ: -- ms"
+            android:textSize="14sp"
+            android:textColor="#4A7AFF"
+            android:fontFamily="sans-serif-light"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dp"
             android:text="Starlink VPN"
             android:textSize="14sp"
             android:textColor="#4A7AFF"
@@ -78,7 +88,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="اتصال فقط با داشتن کانفیگ فعال ممکن است.\n\nاتصال با فیلترهای رایگان و بدون کانفیگ انجام نمی‌شود.\n\nلطفاً قبل از شروع، از اتصال کانفیگ خود اطمینان حاصل کنید."
+            android:text="اگر برنامه را از کسی گرفته اید از او درخواست کنید تا فایل ارتقا را نیز برای شما بفرستد.\n\nاتصال بدون فایل ارتقاء انجام نمی شود.\n\nلطفاً قبل از شروع، از داشتن فایل ارتقاء اطمینان حاصل کنید."
             android:textSize="16sp"
             android:textColor="#E0E0E0"
             android:gravity="center"
