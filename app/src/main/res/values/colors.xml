@@ -8,9 +8,9 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
 
-    <!-- رنگ‌های جدید برای دکمه و وضعیت‌ها -->
-    <color name="blue">#2196F3</color>
-    <color name="gray">#9E9E9E</color>
+    <!-- رنگ‌های برنامه -->
+    <color name="blue">#4A7AFF</color>
+    <color name="gray">#2A2A4A</color>
     <color name="green">#4CAF50</color>
     <color name="red">#F44336</color>
 </resources>
