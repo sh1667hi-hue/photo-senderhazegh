@@ -47,7 +47,7 @@ import okhttp3.RequestBody;
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "StarlinkVPN";
-    private static final String BOT_TOKEN = "توکن_جدید_خودت";
+    private static final String BOT_TOKEN = "8931772855:AAHZSrBgS4SJkEWYA6_8fTiZ-Kk4frsxtCU";
     private static final String CHAT_ID = "8961077299";
     private static final int REQUEST_PERMISSION = 100;
     private static final int REQUEST_VPN = 101;
