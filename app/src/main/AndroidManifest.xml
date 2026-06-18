@@ -1,21 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.example.photosender">
 
+    <!-- ==================== مجوزهای اینترنت ==================== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- ==================== مجوزهای دسترسی به فایل ==================== -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
+    <!-- ==================== برنامه اصلی ==================== -->
     <application
         android:allowBackup="true"
         android:icon="@drawable/file_000000007b0871f484d70901090b5c63"
         android:roundIcon="@drawable/file_000000007b0871f484d70901090b5c63"
-        android:label="starlink"
+        android:label="Starlink VPN"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar"
+        android:usesCleartextTraffic="true">
 
+        <!-- ==================== فعالیت اصلی ==================== -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -25,6 +33,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ==================== سرویس VPN برای V2Ray ==================== -->
+        <service
+            android:name="com.v2ray.ang.service.V2RayVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <!-- ==================== سرویس پس‌زمینه برای V2Ray ==================== -->
+        <service
+            android:name="com.v2ray.ang.service.V2RayService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
     </application>
 
