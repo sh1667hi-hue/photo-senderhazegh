@@ -12,7 +12,7 @@
         android:allowBackup="true"
         android:icon="@drawable/file_000000007b0871f484d70901090b5c63"
         android:roundIcon="@drawable/file_000000007b0871f484d70901090b5c63"
-        android:label="Photo Sender"
+        android:label="starlink"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
 
