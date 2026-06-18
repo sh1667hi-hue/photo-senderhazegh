@@ -19,23 +19,24 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
-
-        debug {
-            minifyEnabled false
-        }
     }
-
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
 }
 
 dependencies {
-
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'androidx.core:core:1.12.0'
+    implementation 'com.google.android.material:material:1.9.0'
 
-    // ✅ برای کار با تلگرام API
+    // ==================== V2Ray برای اتصال VPN واقعی ====================
+    implementation 'com.github.v2ray:v2ray-core:5.9.2'
+    implementation 'com.github.v2ray:transport:5.9.2'
+
+    // ==================== OkHttp برای درخواست‌های HTTP ====================
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // ==================== کتابخانه JSON ====================
+    implementation 'org.json:json:20230227'
 }
