@@ -2,12 +2,15 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_enabled="false">
         <shape android:shape="oval">
-            <solid android:color="#BDBDBD"/> <!-- خاکستری برای حالت لودینگ -->
+            <solid android:color="#2A2A4A"/>
         </shape>
     </item>
     <item android:state_enabled="true">
         <shape android:shape="oval">
-            <solid android:color="#2196F3"/> <!-- آبی پیش‌فرض -->
+            <gradient
+                android:startColor="#4A7AFF"
+                android:endColor="#6C3BFF"
+                android:angle="135"/>
         </shape>
     </item>
 </selector>
